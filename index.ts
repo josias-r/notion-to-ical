@@ -2,8 +2,8 @@ import ical from "jsr:@sebbo2002/ical-generator";
 import { Client } from "npm:@notionhq/client";
 
 const NOTION_TOKEN = Deno.env.get("NOTION_TOKEN") || "";
+const DATE_PROPERTY = "Date";
 const organisation = Deno.env.get("NOTION_ORGANISATION") || "";
-const dateProperty = Deno.env.get("DATE_PROPERTY_NAME") || "Due";
 const notion = new Client({ auth: NOTION_TOKEN });
 
 function urlFromId(theId: string, dbId: string): string {
@@ -24,15 +24,16 @@ async function generateCalendar(dbId: string) {
     const { results } = await notion.databases.query({
       database_id: dbId,
       filter: {
-        property: dateProperty,
+        property: DATE_PROPERTY,
         date: { is_not_empty: true },
       },
-      sorts: [{ property: dateProperty, direction: "descending" }],
+      sorts: [{ property: DATE_PROPERTY, direction: "descending" }],
     });
 
     for (const nEvent of results) {
       const url = urlFromId(nEvent.id, dbId);
       console.log("Adding event", url);
+      console.log("Event", nEvent);
 
       // const startRaw = nEvent.properties[dateProperty].date?.start!;
       // const start = new Date(startRaw);
