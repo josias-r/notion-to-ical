@@ -1,13 +1,16 @@
 import ical, { ICalCalendar } from "jsr:@sebbo2002/ical-generator";
 import { Client } from "npm:@notionhq/client";
-import { isNotionClientError } from "npm:@notionhq/client";
+import {
+  isFullDatabase,
+  isFullPage,
+  isNotionClientError,
+} from "npm:@notionhq/client";
 import {
   DatabaseObjectResponse,
   PageObjectResponse,
   PartialDatabaseObjectResponse,
   PartialPageObjectResponse,
 } from "npm:@notionhq/client/build/src/api-endpoints";
-import { isFullPage } from "npm:@notionhq/client";
 
 const NOTION_TOKEN = Deno.env.get("NOTION_TOKEN") || "";
 const DATE_PROPERTY = "Date";
@@ -76,34 +79,30 @@ function parseNotionEvent(
 
 // inspired by https://github.com/tankengines/notion-ical
 async function generateCalendar(dbId: string) {
-  const calendar = ical({ name: `Notion DB ${dbId}` });
-
-  try {
-    const db = await notion.databases.retrieve({ database_id: dbId });
-    console.log("Generating calendar for", dbId, db);
-
-    const { results } = await notion.databases.query({
-      database_id: dbId,
-      filter: {
-        property: DATE_PROPERTY,
-        date: { is_not_empty: true },
-      },
-      sorts: [{ property: DATE_PROPERTY, direction: "descending" }],
-    });
-
-    for (const nEvent of results) {
-      try {
-        parseNotionEvent(nEvent, calendar, dbId);
-      } catch (err) {
-        console.error("Error parsing event", nEvent.id, err);
-        throw err;
-      }
-    }
-  } catch (err) {
-    console.error("Error generating calendar for", dbId, err);
-    throw err;
+  const db = await notion.databases.retrieve({ database_id: dbId });
+  if (!isFullDatabase(db)) {
+    throw new Error("Not a full database");
   }
+  const dbTitle = db.title?.[0]?.plain_text || "Untitled";
+  const calendar = ical({ name: dbTitle });
 
+  const { results } = await notion.databases.query({
+    database_id: dbId,
+    filter: {
+      property: DATE_PROPERTY,
+      date: { is_not_empty: true },
+    },
+    sorts: [{ property: DATE_PROPERTY, direction: "descending" }],
+  });
+
+  for (const nEvent of results) {
+    try {
+      parseNotionEvent(nEvent, calendar, dbId);
+    } catch (err) {
+      console.error("Error parsing event", nEvent.id, err);
+      throw err;
+    }
+  }
   return calendar;
 }
 
