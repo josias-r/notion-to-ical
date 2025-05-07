@@ -1,8 +1,17 @@
-import ical from "jsr:@sebbo2002/ical-generator";
+import ical, { ICalCalendar } from "jsr:@sebbo2002/ical-generator";
 import { Client } from "npm:@notionhq/client";
+import { isNotionClientError } from "npm:@notionhq/client";
+import {
+  DatabaseObjectResponse,
+  PageObjectResponse,
+  PartialDatabaseObjectResponse,
+  PartialPageObjectResponse,
+} from "npm:@notionhq/client/build/src/api-endpoints";
+import { isFullPage } from "npm:@notionhq/client";
 
 const NOTION_TOKEN = Deno.env.get("NOTION_TOKEN") || "";
 const DATE_PROPERTY = "Date";
+const TITLE_PROPERTY = "Name";
 const organisation = Deno.env.get("NOTION_ORGANISATION") || "";
 const notion = new Client({ auth: NOTION_TOKEN });
 
@@ -14,6 +23,55 @@ function urlFromId(theId: string, dbId: string): string {
       "",
     )
   }`;
+}
+
+function parseNotionEvent(
+  nEvent:
+    | PageObjectResponse
+    | PartialPageObjectResponse
+    | DatabaseObjectResponse
+    | PartialDatabaseObjectResponse,
+  calendar: ICalCalendar,
+  dbId: string,
+) {
+  if (!isFullPage(nEvent)) {
+    throw new Error("Not a full page");
+  }
+  const dateProp = nEvent.properties[DATE_PROPERTY];
+  if (!("date" in dateProp) || !dateProp.date) {
+    throw new Error("Date property is not a date");
+  }
+  const url = urlFromId(nEvent.id, dbId);
+
+  const startRaw = dateProp.date.start;
+  const start = new Date(startRaw);
+  const endRaw = dateProp.date.end;
+  const end = endRaw ? new Date(endRaw) : undefined;
+  const lastEdit = nEvent.last_edited_time;
+
+  const titleProp = nEvent.properties[TITLE_PROPERTY];
+  if (!("title" in titleProp)) {
+    throw new Error("Title property is not a title");
+  }
+  const title = titleProp?.title?.[0]?.plain_text || "Untitled";
+
+  if (end) {
+    calendar.createEvent({
+      url,
+      summary: title,
+      start,
+      end,
+      description: `Last edited at: ${lastEdit}`,
+    });
+  } else {
+    calendar.createEvent({
+      url,
+      summary: title,
+      allDay: true,
+      start,
+      description: `Last edited at: ${lastEdit}`,
+    });
+  }
 }
 
 // inspired by https://github.com/tankengines/notion-ical
@@ -31,39 +89,12 @@ async function generateCalendar(dbId: string) {
     });
 
     for (const nEvent of results) {
-      const url = urlFromId(nEvent.id, dbId);
-      console.log("Adding event", url);
-      console.log("Event", nEvent);
-
-      // const startRaw = nEvent.properties[dateProperty].date?.start!;
-      // const start = new Date(startRaw);
-      // const endRaw = nEvent.properties[dateProperty].date?.end;
-      // const end = endRaw ? new Date(endRaw) : undefined;
-      // const lastEdit = nEvent.last_edited_time;
-
-      // // find the title property
-      // const titleProp = Object.values(nEvent.properties).find(
-      //   (p) => p.id === "title"
-      // );
-      // const title = titleProp?.title?.[0]?.plain_text || "Untitled";
-
-      // if (end) {
-      //   calendar.createEvent({
-      //     url,
-      //     summary: title,
-      //     start,
-      //     end,
-      //     description: `Last edited at: ${lastEdit}`,
-      //   });
-      // } else {
-      //   calendar.createEvent({
-      //     url,
-      //     summary: title,
-      //     allDay: true,
-      //     start,
-      //     description: `Last edited at: ${lastEdit}`,
-      //   });
-      // }
+      try {
+        parseNotionEvent(nEvent, calendar, dbId);
+      } catch (err) {
+        console.error("Error parsing event", nEvent.id, err);
+        throw err;
+      }
     }
   } catch (err) {
     console.error("Error generating calendar for", dbId, err);
@@ -97,6 +128,12 @@ async function handler(_req: Request) {
     });
   } catch (err) {
     console.error(err);
+    if (isNotionClientError(err)) {
+      return new Response(
+        `Error generating calendar: ${err.code} ${err.message}`,
+        { status: 500 },
+      );
+    }
     return new Response("Error generating calendar", { status: 500 });
   }
 }
