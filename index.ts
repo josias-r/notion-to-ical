@@ -1,11 +1,7 @@
 import ical from "jsr:@sebbo2002/ical-generator";
 import { Client } from "npm:@notionhq/client";
 
-const NOTION_TOKEN = Deno.env.get("NOTION_TOKEN");
-if (!NOTION_TOKEN) {
-  console.error("Missing NOTION_TOKEN env variable");
-  Deno.exit(1);
-}
+const NOTION_TOKEN = Deno.env.get("NOTION_TOKEN") || "";
 const organisation = Deno.env.get("NOTION_ORGANISATION") || "";
 const dateProperty = Deno.env.get("DATE_PROPERTY_NAME") || "Due";
 const notion = new Client({ auth: NOTION_TOKEN });
@@ -77,6 +73,12 @@ async function generateCalendar(dbId: string) {
 }
 
 async function handler(_req: Request) {
+  if (!NOTION_TOKEN) {
+    console.error("Missing NOTION_TOKEN env variable");
+    return new Response("Missing NOTION_TOKEN env variable", {
+      status: 500,
+    });
+  }
   const url = new URL(_req.url);
   const dbId = url.searchParams.get("dbId");
   if (!dbId) {
