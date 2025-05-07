@@ -79,6 +79,9 @@ async function generateCalendar(dbId: string) {
   const calendar = ical({ name: `Notion DB ${dbId}` });
 
   try {
+    const db = await notion.databases.retrieve({ database_id: dbId });
+    console.log("Generating calendar for", dbId, db);
+
     const { results } = await notion.databases.query({
       database_id: dbId,
       filter: {
@@ -123,7 +126,9 @@ async function handler(_req: Request) {
     return new Response(ics, {
       headers: {
         "Content-Type": "text/calendar",
-        "Content-Disposition": `inline; filename="${dbId}.ics"`,
+        "Content-Disposition": `inline; filename="${
+          calendar.name() || "Untitled"
+        }.ics"`,
       },
     });
   } catch (err) {
